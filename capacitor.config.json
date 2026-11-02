@@ -1,0 +1,9 @@
+{
+  "appId": "com.officerkd6.player",
+  "appName": "Officer K",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
