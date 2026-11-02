@@ -1,0 +1,100 @@
+name: Build Blade Runner Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "**"
+      - ".github/workflows/main.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install project dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Check Capacitor configuration
+        shell: bash
+        run: |
+          node -e "
+            const p = require('./package.json');
+            console.log('Project:', p.name || 'Blade Runner');
+            console.log('Build script:', p.scripts?.build || 'Not defined');
+            console.log('Capacitor core:', p.dependencies?.['@capacitor/core'] || p.devDependencies?.['@capacitor/core'] || 'Not declared');
+          "
+
+      - name: Ensure Android platform is installed
+        shell: bash
+        run: |
+          CORE_VERSION=$(node -p "require('./node_modules/@capacitor/core/package.json').version")
+          CORE_MAJOR="${CORE_VERSION%%.*}"
+
+          if [ ! -d node_modules/@capacitor/android ]; then
+            npm install --save-dev "@capacitor/android@^${CORE_MAJOR}.0.0"
+          fi
+
+          if [ ! -d node_modules/@capacitor/cli ]; then
+            npm install --save-dev "@capacitor/cli@^${CORE_MAJOR}.0.0"
+          fi
+
+      - name: Build web application
+        run: npm run build --if-present
+
+      - name: Create Android project if needed
+        shell: bash
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Copy web files into Android project
+        run: npx cap sync android
+
+      - name: Make Gradle executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blade-Runner-2049-Android-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
